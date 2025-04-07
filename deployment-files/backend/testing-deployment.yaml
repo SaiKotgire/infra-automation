@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-testing
+  labels:
+    app: backend-testing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-testing
+  template:
+    metadata:
+      labels:
+        app: backend-testing
+    spec:
+      containers:
+      - name: backend
+        image: saikotgirep/backend:main-INIT  # Jenkins will replace this with dynamic tag
+        ports:
+        - containerPort: 5000
