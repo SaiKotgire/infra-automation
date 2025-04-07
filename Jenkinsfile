@@ -34,21 +34,22 @@ pipeline {
             steps {
                 script {
                     def branches = env.BUILD_BRANCHES.split(',')
-                    def timestamp = sh(script: "date +%Y%m%d-%H%M%S", returnStdout: true).trim()
+                    def timestamp = bat(script: "echo %DATE:/=%-%TIME::=%", returnStdout: true).trim()
+                    timestamp = timestamp.replaceAll("[^a-zA-Z0-9]", "-")
 
                     branches.each { branch ->
-                        // Clone and Build Frontend
+                        // Frontend
                         dir("frontend-${branch}") {
                             git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                            sh "docker build -t ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp} ."
-                            sh "docker push ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp}"
+                            bat "docker build -t ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp} ."
+                            bat "docker push ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp}"
                         }
 
-                        // Clone and Build Backend
+                        // Backend
                         dir("backend-${branch}") {
                             git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                            sh "docker build -t ${IMAGE_REGISTRY}/backend:${branch}-${timestamp} ."
-                            sh "docker push ${IMAGE_REGISTRY}/backend:${branch}-${timestamp}"
+                            bat "docker build -t ${IMAGE_REGISTRY}/backend:${branch}-${timestamp} ."
+                            bat "docker push ${IMAGE_REGISTRY}/backend:${branch}-${timestamp}"
                         }
                     }
 
@@ -65,9 +66,9 @@ pipeline {
                         def feImage = "${IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}"
                         def beImage = "${IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}"
 
-                        // Replace deployment names with your actual K8s deployment names
-                        sh "kubectl set image deployment/frontend-${branch} frontend=${feImage}"
-                        sh "kubectl set image deployment/backend-${branch} backend=${beImage}"
+                        // Replace deployment names as necessary
+                        bat "kubectl set image deployment/frontend-${branch} frontend=${feImage}"
+                        bat "kubectl set image deployment/backend-${branch} backend=${beImage}"
                     }
                 }
             }
