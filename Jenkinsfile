@@ -1,67 +1,67 @@
 pipeline {
     agent any
+
     environment {
-        FRONTEND_REPO = 'https://github.com/SaiKotgire/frontend.git' // Replace with your actual URL
+        FRONTEND_REPO = 'https://github.com/SaiKotgire/frontend.git'
         BACKEND_REPO = 'https://github.com/SaiKotgire/backend.git'
-        IMAGE_REGISTRY = 'saikotgirep' // DockerHub username
-        GIT_CRED_ID = 'github-https' // Set in Jenkins > Credentials
+        IMAGE_REGISTRY = 'saikotgirep'
+        GIT_CRED_ID = 'github-https'
     }
 
     stages {
         stage('Determine Build Branches') {
             steps {
                 script {
-                    def today = new Date()
-                    def day = today.format('d') as Integer
-                    def builds = []
+                    def dayOfWeek = new Date().format('EEEE', TimeZone.getTimeZone('Asia/Kolkata'))
+                    def builds = ['main'] // Always build main
 
-                    builds << 'main' // Always
-
-                    if (day % 2 == 1) {
-                        builds << 'testing' // Odd days
-                        builds << 'dev'
+                    if (dayOfWeek == 'Monday') {
+                        builds << 'testing'
                     }
-
-                    if (day % 2 == 0) {
-                        builds << 'stage' // Every 2 days
+                    if (dayOfWeek == 'Tuesday' || dayOfWeek == 'Thursday') {
+                        builds << 'staging'
                     }
 
                     env.BUILD_BRANCHES = builds.join(',')
+                    echo "Today is ${dayOfWeek}, so building branches: ${env.BUILD_BRANCHES}"
                 }
             }
         }
 
-     stage('Clone and Build Docker Images') {
-    steps {
-        script {
-            def branches = env.BUILD_BRANCHES.split(',')
-            def timestamp = bat(script: "echo %DATE:/=%-%TIME::=%", returnStdout: true).trim()
-            timestamp = timestamp.replaceAll("[^a-zA-Z0-9]", "-")
+        stage('Clone and Build Docker Images') {
+            steps {
+                script {
+                    def branches = env.BUILD_BRANCHES.split(',')
+                    def timestamp = bat(script: "echo %DATE:/=%-%TIME::=%", returnStdout: true).trim()
+                    timestamp = timestamp.replaceAll("[^a-zA-Z0-9]", "-")
 
-            withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                bat "echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin"
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        bat "echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin"
 
-                branches.each { branch ->
-                    // Frontend
-                    dir("frontend-${branch}") {
-                        git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                        bat "docker build -t ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp} ."
-                        bat "docker push ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp}"
+                        branches.each { branch ->
+                            // Frontend
+                            dir("frontend-${branch}") {
+                                git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
+                                bat "docker build -t ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp} ."
+                                bat "docker push ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp}"
+                            }
+
+                            // Backend
+                            dir("backend-${branch}") {
+                                git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
+                                bat "docker build -t ${IMAGE_REGISTRY}/backend:${branch}-${timestamp} ."
+                                bat "docker push ${IMAGE_REGISTRY}/backend:${branch}-${timestamp}"
+                            }
+                        }
                     }
 
-                    // Backend
-                    dir("backend-${branch}") {
-                        git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                        bat "docker build -t ${IMAGE_REGISTRY}/backend:${branch}-${timestamp} ."
-                        bat "docker push ${IMAGE_REGISTRY}/backend:${branch}-${timestamp}"
-                    }
+                    env.IMAGE_TAG = timestamp
                 }
             }
-
-            env.IMAGE_TAG = timestamp
         }
     }
 }
+
 
         stage('Update Kubernetes Deployments') {
             steps {
