@@ -18,7 +18,7 @@ pipeline {
                     builds << 'main' // Always
 
                     if (day % 2 == 1) {
-                        builds << 'dev' // Odd days
+                        builds << 'testing' // Odd days
                     }
 
                     if (day % 2 == 0) {
