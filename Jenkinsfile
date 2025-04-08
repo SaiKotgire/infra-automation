@@ -19,7 +19,7 @@ pipeline {
                         builds << 'testing'
                     }
                     if (dayOfWeek == 'Tuesday' || dayOfWeek == 'Thursday') {
-                        builds << 'staging'
+                        builds << 'stage'
                     }
 
                     env.BUILD_BRANCHES = builds.join(',')
