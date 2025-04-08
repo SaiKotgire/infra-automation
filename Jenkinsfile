@@ -19,6 +19,7 @@ pipeline {
 
                     if (day % 2 == 1) {
                         builds << 'testing' // Odd days
+                        builds << 'dev'
                     }
 
                     if (day % 2 == 0) {
