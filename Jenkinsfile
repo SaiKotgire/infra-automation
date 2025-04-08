@@ -30,33 +30,37 @@ pipeline {
             }
         }
 
-        stage('Clone and Build Docker Images') {
-            steps {
-                script {
-                    def branches = env.BUILD_BRANCHES.split(',')
-                    def timestamp = bat(script: "echo %DATE:/=%-%TIME::=%", returnStdout: true).trim()
-                    timestamp = timestamp.replaceAll("[^a-zA-Z0-9]", "-")
+     stage('Clone and Build Docker Images') {
+    steps {
+        script {
+            def branches = env.BUILD_BRANCHES.split(',')
+            def timestamp = bat(script: "echo %DATE:/=%-%TIME::=%", returnStdout: true).trim()
+            timestamp = timestamp.replaceAll("[^a-zA-Z0-9]", "-")
 
-                    branches.each { branch ->
-                        // Frontend
-                        dir("frontend-${branch}") {
-                            git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                            bat "docker build -t ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp} ."
-                            bat "docker push ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp}"
-                        }
+            withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                bat "echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin"
 
-                        // Backend
-                        dir("backend-${branch}") {
-                            git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                            bat "docker build -t ${IMAGE_REGISTRY}/backend:${branch}-${timestamp} ."
-                            bat "docker push ${IMAGE_REGISTRY}/backend:${branch}-${timestamp}"
-                        }
+                branches.each { branch ->
+                    // Frontend
+                    dir("frontend-${branch}") {
+                        git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
+                        bat "docker build -t ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp} ."
+                        bat "docker push ${IMAGE_REGISTRY}/frontend:${branch}-${timestamp}"
                     }
 
-                    env.IMAGE_TAG = timestamp
+                    // Backend
+                    dir("backend-${branch}") {
+                        git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
+                        bat "docker build -t ${IMAGE_REGISTRY}/backend:${branch}-${timestamp} ."
+                        bat "docker push ${IMAGE_REGISTRY}/backend:${branch}-${timestamp}"
+                    }
                 }
             }
+
+            env.IMAGE_TAG = timestamp
         }
+    }
+}
 
         stage('Update Kubernetes Deployments') {
             steps {
