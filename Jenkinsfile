@@ -59,9 +59,6 @@ pipeline {
                 }
             }
         }
-    }
-}
-
 
         stage('Update Kubernetes Deployments') {
             steps {
@@ -71,7 +68,6 @@ pipeline {
                         def feImage = "${IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}"
                         def beImage = "${IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}"
 
-                        // Replace deployment names as necessary
                         bat "kubectl set image deployment/frontend-${branch} frontend=${feImage}"
                         bat "kubectl set image deployment/backend-${branch} backend=${beImage}"
                     }
