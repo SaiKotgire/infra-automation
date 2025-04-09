@@ -6,6 +6,8 @@ pipeline {
         BACKEND_REPO = 'https://github.com/SaiKotgire/backend.git'
         IMAGE_REGISTRY = 'saikotgirep'
         GIT_CRED_ID = 'github-https'
+        // Add Docker Hub credentials ID that you've configured in Jenkins
+        DOCKER_CRED_ID = 'dockerhub'
     }
 
     stages {
@@ -33,26 +35,43 @@ pipeline {
                 script {
                     def branches = env.BUILD_BRANCHES.split(',')
 
-                    // Generate timestamp using PowerShell (for Windows agent)
-                    def timestamp = powershell(script: '[DateTime]::Now.ToString("yyyyMMdd-HHmmss")', returnStdout: true).trim()
+                    // Generate timestamp in a cross-platform way
+                    def timestamp = sh(script: 'date +"%Y%m%d-%H%M%S"', returnStdout: true).trim()
                     env.IMAGE_TAG = timestamp
 
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                        bat "echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin"
-
-                        branches.each { branch ->
-                            // Frontend
-                            dir("frontend-${branch}") {
-                                git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                                bat "docker build -t ${IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG} ."
-                                bat "docker push ${IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}"
+                    branches.each { branch ->
+                        // Frontend
+                        dir("frontend-${branch}") {
+                            git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
+                            
+                            // Secure Docker build and push
+                            withCredentials([usernamePassword(
+                                credentialsId: env.DOCKER_CRED_ID,
+                                usernameVariable: 'DOCKER_USERNAME',
+                                passwordVariable: 'DOCKER_PASSWORD'
+                            )]) {
+                                sh """
+                                    docker build -t ${env.IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG} .
+                                    echo \$DOCKER_PASSWORD | docker login -u \$DOCKER_USERNAME --password-stdin
+                                    docker push ${env.IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}
+                                """
                             }
+                        }
 
-                            // Backend
-                            dir("backend-${branch}") {
-                                git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                                bat "docker build -t ${IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG} ."
-                                bat "docker push ${IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}"
+                        // Backend
+                        dir("backend-${branch}") {
+                            git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
+                            
+                            withCredentials([usernamePassword(
+                                credentialsId: env.DOCKER_CRED_ID,
+                                usernameVariable: 'DOCKER_USERNAME',
+                                passwordVariable: 'DOCKER_PASSWORD'
+                            )]) {
+                                sh """
+                                    docker build -t ${env.IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG} .
+                                    echo \$DOCKER_PASSWORD | docker login -u \$DOCKER_USERNAME --password-stdin
+                                    docker push ${env.IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}
+                                """
                             }
                         }
                     }
@@ -65,11 +84,11 @@ pipeline {
                 script {
                     def branches = env.BUILD_BRANCHES.split(',')
                     branches.each { branch ->
-                        def feImage = "${IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}"
-                        def beImage = "${IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}"
+                        def feImage = "${env.IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}"
+                        def beImage = "${env.IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}"
 
-                        bat "kubectl set image deployment/frontend-${branch} frontend=${feImage} --namespace=default"
-                        bat "kubectl set image deployment/backend-${branch} backend=${beImage} --namespace=default"
+                        sh "kubectl set image deployment/frontend-${branch} frontend=${feImage} --namespace=default"
+                        sh "kubectl set image deployment/backend-${branch} backend=${beImage} --namespace=default"
                     }
                 }
             }
@@ -77,9 +96,20 @@ pipeline {
 
         stage('Notify') {
             steps {
-                mail to: 'your-email@example.com',
-                     subject: "✅ Deployment Successful - ${env.IMAGE_TAG}",
-                     body: "Frontend and backend deployed for branches: ${env.BUILD_BRANCHES}"
+                emailext(
+                    to: 'your-email@example.com',
+                    subject: "✅ Deployment Successful - ${env.IMAGE_TAG}",
+                    body: """
+                        <p>Frontend and backend deployed successfully for branches: ${env.BUILD_BRANCHES}</p>
+                        <p>Deployment details:</p>
+                        <ul>
+                            <li>Timestamp: ${env.IMAGE_TAG}</li>
+                            <li>Branches: ${env.BUILD_BRANCHES}</li>
+                            <li>Registry: ${env.IMAGE_REGISTRY}</li>
+                        </ul>
+                    """,
+                    mimeType: 'text/html'
+                )
             }
         }
     }
