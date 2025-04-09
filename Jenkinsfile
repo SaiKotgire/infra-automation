@@ -34,8 +34,10 @@ pipeline {
                 script {
                     def branches = env.BUILD_BRANCHES.split(',')
 
-                    // Generate timestamp for Windows
-                    def timestamp = bat(script: 'powershell -command "[DateTime]::Now.ToString(\"yyyyMMdd-HHmmss\")"', returnStdout: true).trim()
+                    // Fixed PowerShell timestamp generation for Windows
+                    def timestamp = powershell(returnStdout: true, script: '''
+                        [DateTime]::Now.ToString("yyyyMMdd-HHmmss")
+                    ''').trim()
                     env.IMAGE_TAG = timestamp
 
                     withCredentials([usernamePassword(
