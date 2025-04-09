@@ -2,14 +2,29 @@ pipeline {
     agent any
 
     environment {
-        // ... (keep your existing environment variables)
+        FRONTEND_REPO = 'https://github.com/SaiKotgire/frontend.git'
+        BACKEND_REPO = 'https://github.com/SaiKotgire/backend.git'
+        IMAGE_REGISTRY = 'saikotgirep'
+        GIT_CRED_ID = 'github-https'
+        DOCKER_CRED_ID = 'dockerhub'
     }
 
     stages {
         stage('Determine Build Branches') {
             steps {
                 script {
-                    // ... (keep your existing logic)
+                    def dayOfWeek = new Date().format('EEEE', TimeZone.getTimeZone('Asia/Kolkata'))
+                    def builds = ['main'] // Always build main
+
+                    if (dayOfWeek == 'Monday') {
+                        builds << 'testing'
+                    }
+                    if (dayOfWeek == 'Tuesday' || dayOfWeek == 'Thursday') {
+                        builds << 'stage'
+                    }
+
+                    env.BUILD_BRANCHES = builds.join(',')
+                    echo "Today is ${dayOfWeek}, building branches: ${env.BUILD_BRANCHES}"
                 }
             }
         }
@@ -18,8 +33,9 @@ pipeline {
             steps {
                 script {
                     def branches = env.BUILD_BRANCHES.split(',')
-                    // Use PowerShell for timestamp on Windows
-                    def timestamp = powershell(script: '[DateTime]::Now.ToString("yyyyMMdd-HHmmss")', returnStdout: true).trim()
+
+                    // Generate timestamp for Windows
+                    def timestamp = bat(script: 'powershell -command "[DateTime]::Now.ToString(\"yyyyMMdd-HHmmss\")"', returnStdout: true).trim()
                     env.IMAGE_TAG = timestamp
 
                     withCredentials([usernamePassword(
@@ -27,26 +43,21 @@ pipeline {
                         usernameVariable: 'DOCKER_USERNAME',
                         passwordVariable: 'DOCKER_PASSWORD'
                     )]) {
-                        // Use bat for Docker commands on Windows
-                        bat """
-                            echo %DOCKER_PASSWORD% | docker login -u %DOCKER_USERNAME% --password-stdin
-                        """
+                        bat "echo %DOCKER_PASSWORD% | docker login -u %DOCKER_USERNAME% --password-stdin"
 
                         branches.each { branch ->
+                            // Frontend
                             dir("frontend-${branch}") {
                                 git url: "${env.FRONTEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                                bat """
-                                    docker build -t ${env.IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG} .
-                                    docker push ${env.IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}
-                                """
+                                bat "docker build -t ${env.IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG} ."
+                                bat "docker push ${env.IMAGE_REGISTRY}/frontend:${branch}-${env.IMAGE_TAG}"
                             }
 
+                            // Backend
                             dir("backend-${branch}") {
                                 git url: "${env.BACKEND_REPO}", branch: branch, credentialsId: "${env.GIT_CRED_ID}"
-                                bat """
-                                    docker build -t ${env.IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG} .
-                                    docker push ${env.IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}
-                                """
+                                bat "docker build -t ${env.IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG} ."
+                                bat "docker push ${env.IMAGE_REGISTRY}/backend:${branch}-${env.IMAGE_TAG}"
                             }
                         }
                     }
@@ -65,6 +76,16 @@ pipeline {
                         bat "kubectl set image deployment/frontend-${branch} frontend=${feImage} --namespace=default"
                         bat "kubectl set image deployment/backend-${branch} backend=${beImage} --namespace=default"
                     }
+                }
+            }
+        }
+
+        stage('Notify') {
+            steps {
+                script {
+                    mail to: 'your-email@example.com',
+                         subject: "✅ Deployment Successful - ${env.IMAGE_TAG}",
+                         body: "Frontend and backend deployed for branches: ${env.BUILD_BRANCHES}"
                 }
             }
         }
